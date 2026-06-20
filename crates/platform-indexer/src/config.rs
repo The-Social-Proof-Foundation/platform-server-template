@@ -5,7 +5,6 @@ pub struct IndexerConfig {
     pub grpc_url: String,
     pub network: String,
     pub platform_id: String,
-    pub package_id: Option<String>,
 }
 
 pub fn load_from_env() -> AppResult<Option<IndexerConfig>> {
@@ -29,6 +28,5 @@ pub fn load_from_env() -> AppResult<Option<IndexerConfig>> {
         grpc_url,
         network: std::env::var("MYSO_NETWORK").unwrap_or_else(|_| "devnet".into()),
         platform_id: platform_id.to_lowercase(),
-        package_id: std::env::var("MYSO_SOCIAL_PACKAGE_ID").ok(),
     }))
 }

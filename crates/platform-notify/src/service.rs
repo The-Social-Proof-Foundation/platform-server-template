@@ -81,21 +81,10 @@ impl NotificationService {
         .await?;
 
         if let Some((Some(email),)) = email {
-            let email_enabled = sqlx::query_as::<_, (String,)>(
-                "SELECT setting_value FROM settings WHERE user_id::text = $1 AND setting_name = 'email_notifications'",
-            )
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await?
-            .map(|r| r.0 != "false")
-            .unwrap_or(true);
-
-            if email_enabled {
-                let _ = self
-                    .resend
-                    .send_email(&email, title, &format!("<p>{message}</p>"), None, None)
-                    .await;
-            }
+            let _ = self
+                .resend
+                .send_email(&email, title, &format!("<p>{message}</p>"), None, None)
+                .await;
         }
 
         Ok(())

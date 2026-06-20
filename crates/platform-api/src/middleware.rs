@@ -1,6 +1,9 @@
 use axum::extract::{Extension, Request};
+use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use axum::Json;
+use serde_json::json;
 
 use crate::auth::jwt::verify_access_token;
 use crate::error::ApiError;
@@ -108,6 +111,42 @@ async fn rate_limit_with_ip(
         return Err(platform_core::AppError::TooManyRequests.into());
     }
     Ok(())
+}
+
+pub async fn require_platform_access(
+    Extension(state): Extension<SharedApiState>,
+    Extension(auth): Extension<AuthUser>,
+    req: Request,
+    next: Next,
+) -> Response {
+    if !state.config().waitlist_enabled {
+        return next.run(req).await;
+    }
+
+    match platform_db::is_approved(state.pg_read(), &auth.user_id).await {
+        Ok(true) => next.run(req).await,
+        Ok(false) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "code": "waitlist_pending",
+                "message": "Platform access pending waitlist approval",
+            })),
+        )
+            .into_response(),
+        Err(err) => ApiError(err).into_response(),
+    }
+}
+
+pub async fn rate_limit_circulation(
+    Extension(state): Extension<SharedApiState>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let ip = client_ip(&req);
+    match rate_limit_with_ip(&state, &ip, "rl:circulation", 60).await {
+        Ok(()) => next.run(req).await,
+        Err(err) => err.into_response(),
+    }
 }
 
 fn client_ip(req: &Request) -> String {

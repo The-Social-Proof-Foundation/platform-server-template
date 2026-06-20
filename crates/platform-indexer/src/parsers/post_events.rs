@@ -153,6 +153,9 @@ fn as_string_array(v: &Value) -> Option<Vec<String>> {
 }
 
 pub fn parse_grpc_event(raw: &RawGrpcEvent) -> Option<ParsedChainEvent> {
+    if !crate::filters::platform_filter::matches_social_package(raw.package_id.as_deref()) {
+        return None;
+    }
     if raw.module.as_deref() != Some("post") {
         return None;
     }
@@ -269,7 +272,7 @@ mod tests {
     #[test]
     fn parses_post_created() {
         let raw = RawGrpcEvent {
-            package_id: None,
+            package_id: Some("0x50c1".into()),
             module: Some("post".into()),
             sender: None,
             event_type: Some("0x1::post::PostCreatedEvent".into()),

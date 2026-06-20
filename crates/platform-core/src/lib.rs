@@ -1,6 +1,7 @@
 pub mod config;
 pub mod error;
 pub mod metrics;
+pub mod settings;
 pub mod state;
 
 pub use config::Config;

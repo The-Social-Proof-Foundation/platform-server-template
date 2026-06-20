@@ -1950,6 +1950,7 @@ dependencies = [
  "chrono",
  "pgvector",
  "platform-core",
+ "rand 0.8.6",
  "redis",
  "serde",
  "serde_json",

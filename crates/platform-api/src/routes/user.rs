@@ -17,6 +17,10 @@ use crate::auth::wallet::{
 use crate::error::ApiResult;
 use crate::middleware::AuthUser;
 use crate::state::SharedApiState;
+use crate::waitlist_events::{
+    dispatch_invite_accepted, dispatch_referral_signup_notifications, dispatch_waitlist_joined,
+    dispatch_waitlist_approved,
+};
 
 #[derive(Deserialize)]
 pub struct SignatureRequest {
@@ -30,6 +34,15 @@ pub struct SignupRequest {
     pub bio: Option<String>,
     pub public_key: String,
     pub signature: String,
+    pub referrer_id: Option<String>,
+    #[serde(rename = "referrerId")]
+    pub referrer_id_camel: Option<String>,
+    pub referral_code: Option<String>,
+    #[serde(rename = "referralCode")]
+    pub referral_code_camel: Option<String>,
+    pub invite_code: Option<String>,
+    #[serde(rename = "inviteCode")]
+    pub invite_code_camel: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -131,6 +144,84 @@ pub async fn create_user(
     .bind(body.bio)
     .fetch_one(state.pg())
     .await?;
+
+    let user_id = user.user_id.to_string();
+
+    if state.config().waitlist_enabled || state.config().referrals_enabled {
+        let _ = platform_db::assign_referral_code(state.pg(), &user_id)
+            .await
+            .inspect_err(|e| tracing::warn!("Failed to assign referral code: {e}"));
+    }
+
+    let invite_code = body.invite_code.or(body.invite_code_camel);
+    let mut approved_via_invite = false;
+
+    if state.config().invites_enabled {
+        if let Some(ref code) = invite_code {
+            if state.config().effective_invite_bypass() {
+                match platform_db::accept_invite(state.pg(), &user_id, code, true).await {
+                    Ok(invite) => {
+                        approved_via_invite = true;
+                        if let Some(inviter) = sqlx::query_as::<_, (Uuid,)>(
+                            "SELECT inviter_user_id FROM user_invites WHERE invite_id = $1",
+                        )
+                        .bind(invite.invite_id)
+                        .fetch_optional(state.pg())
+                        .await?
+                        {
+                            dispatch_invite_accepted(
+                                &state,
+                                &inviter.0.to_string(),
+                                &user_id,
+                            )
+                            .await;
+                            dispatch_waitlist_approved(&state, &user_id, 0).await;
+                        }
+                    }
+                    Err(err) => tracing::warn!("Invite signup failed: {err}"),
+                }
+            }
+        }
+    }
+
+    if state.config().waitlist_enabled && !approved_via_invite {
+        let _ = platform_db::join_waitlist(state.pg(), &user_id)
+            .await
+            .inspect_err(|e| tracing::warn!("Failed to join waitlist: {e}"));
+        dispatch_waitlist_joined(&state, &user_id).await;
+    }
+
+    if state.config().referrals_enabled && !approved_via_invite {
+        let referral_code = body.referral_code.or(body.referral_code_camel);
+        let referrer_id = if let Some(code) = referral_code.as_deref() {
+            platform_db::resolve_referrer_by_code(state.pg(), code).await?
+        } else {
+            body.referrer_id.or(body.referrer_id_camel)
+        };
+
+        if let Some(referrer_id) = referrer_id {
+            match platform_db::record_referral(
+                state.pg(),
+                &referrer_id,
+                &user_id,
+                referral_code.as_deref(),
+            )
+            .await
+            {
+                Ok((inserted, bump_applied)) if inserted => {
+                    dispatch_referral_signup_notifications(
+                        &state,
+                        &referrer_id,
+                        &user_id,
+                        bump_applied,
+                    )
+                    .await;
+                }
+                Ok(_) => {}
+                Err(err) => tracing::warn!("Failed to record referral: {err}"),
+            }
+        }
+    }
 
     Ok((axum::http::StatusCode::CREATED, Json(user)))
 }
@@ -365,61 +456,6 @@ pub async fn get_blocked(
     .fetch_all(state.pg_read())
     .await?;
     Ok(Json(rows.into_iter().map(|r| r.0).collect()))
-}
-
-pub async fn get_settings(
-    Extension(state): Extension<SharedApiState>,
-    Extension(auth): Extension<AuthUser>,
-) -> ApiResult<Json<Vec<(String, String)>>> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT setting_name, setting_value FROM settings WHERE user_id = $1::uuid",
-    )
-    .bind(&auth.user_id)
-    .fetch_all(state.pg_read())
-    .await?;
-    Ok(Json(rows))
-}
-
-pub async fn upsert_setting(
-    Extension(state): Extension<SharedApiState>,
-    Extension(auth): Extension<AuthUser>,
-    Json(body): Json<serde_json::Value>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let name = body
-        .get("setting_name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::BadRequest("setting_name required".into()))?;
-    let value = body
-        .get("setting_value")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::BadRequest("setting_value required".into()))?;
-    sqlx::query(
-        "INSERT INTO settings (user_id, setting_name, setting_value) VALUES ($1::uuid, $2, $3)
-         ON CONFLICT (user_id, setting_name) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()",
-    )
-    .bind(&auth.user_id)
-    .bind(name)
-    .bind(value)
-    .execute(state.pg())
-    .await?;
-    Ok(Json(json!({ "ok": true })))
-}
-
-pub async fn delete_setting(
-    Extension(state): Extension<SharedApiState>,
-    Extension(auth): Extension<AuthUser>,
-    Json(body): Json<serde_json::Value>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let name = body
-        .get("setting_name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::BadRequest("setting_name required".into()))?;
-    sqlx::query("DELETE FROM settings WHERE user_id = $1::uuid AND setting_name = $2")
-        .bind(&auth.user_id)
-        .bind(name)
-        .execute(state.pg())
-        .await?;
-    Ok(Json(json!({ "ok": true })))
 }
 
 pub async fn get_notifications(

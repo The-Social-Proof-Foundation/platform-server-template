@@ -11,6 +11,9 @@ use tracing::{info, warn};
 pub type RedpandaProducer = Arc<FutureProducer>;
 
 pub fn create_producer(config: &Config) -> AppResult<Option<RedpandaProducer>> {
+    if !config.analytics_enabled {
+        return Ok(None);
+    }
     let Some(brokers) = config.redpanda_brokers.as_ref() else {
         return Ok(None);
     };

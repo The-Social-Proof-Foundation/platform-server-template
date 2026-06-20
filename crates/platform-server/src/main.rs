@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use platform_analytics::{create_producer, ensure_clickhouse_schema, spawn_outbox_poller};
-use platform_api::{build_router, ApiState};
+use platform_api::{build_router, spawn_waitlist_processor, ApiState};
 use platform_core::{AppState, Config};
 use platform_db::{default_migrations_dir, run_migrations, CounterFlushManager};
 use platform_indexer::{load_from_env, spawn_indexer, IndexerMetrics};
@@ -55,7 +55,10 @@ async fn main() -> anyhow::Result<()> {
         ));
     }
 
-    let router = build_router(Arc::new(api_state));
+    let shared_state = Arc::new(api_state);
+    spawn_waitlist_processor(shared_state.clone());
+
+    let router = build_router(shared_state);
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     info!(%addr, "platform-server listening");
 
