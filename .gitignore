@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+.env
+.DS_Store
+*.p8
+.cargo/config.local.toml

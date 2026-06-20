@@ -1,0 +1,32 @@
+[package]
+name = "platform-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+hmac.workspace = true
+jsonwebtoken.workspace = true
+platform-analytics = { path = "../platform-analytics" }
+platform-core = { path = "../platform-core" }
+platform-db = { path = "../platform-db" }
+platform-notify = { path = "../platform-notify" }
+redis.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+k256.workspace = true
+sha3.workspace = true
+rand.workspace = true

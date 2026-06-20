@@ -1,0 +1,23 @@
+[package]
+name = "platform-notify"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+a2.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+futures-util.workspace = true
+platform-core = { path = "../platform-core" }
+platform-db = { path = "../platform-db" }
+redis.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
