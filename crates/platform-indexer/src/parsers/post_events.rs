@@ -25,6 +25,10 @@ pub enum ParsedChainEvent {
     CommentDeleted(DeleteCommentPayload),
     PostUpdated(PostUpdatedPayload),
     CommentUpdated(CommentUpdatedPayload),
+    Follow(super::social_graph_events::FollowPayload),
+    Unfollow(super::social_graph_events::UnfollowPayload),
+    Block(super::blocking_events::BlockPayload),
+    Unblock(super::blocking_events::UnblockPayload),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,10 +156,7 @@ fn as_string_array(v: &Value) -> Option<Vec<String>> {
     })
 }
 
-pub fn parse_grpc_event(raw: &RawGrpcEvent) -> Option<ParsedChainEvent> {
-    if !crate::filters::platform_filter::matches_social_package(raw.package_id.as_deref()) {
-        return None;
-    }
+pub fn parse_post_event(raw: &RawGrpcEvent) -> Option<ParsedChainEvent> {
     if raw.module.as_deref() != Some("post") {
         return None;
     }
@@ -285,7 +286,7 @@ mod tests {
                 }
             }),
         };
-        let parsed = parse_grpc_event(&raw).expect("parsed");
+        let parsed = parse_post_event(&raw).expect("parsed");
         match parsed {
             ParsedChainEvent::PostCreated(p) => {
                 assert_eq!(p.post_id, "0xabc");

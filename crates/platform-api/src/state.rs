@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use platform_analytics::RedpandaProducer;
-use platform_core::AppState;
+use platform_core::{AppState, SharedIndexerMetrics, SharedPlatformMetrics};
 use platform_db::CounterFlushManager;
-use platform_core::SharedIndexerMetrics;
+use platform_embeddings::EmbeddingService;
 use platform_notify::NotificationService;
+
+use crate::mysocial::MySocialClient;
 
 #[derive(Clone)]
 pub struct ApiState {
@@ -12,7 +14,10 @@ pub struct ApiState {
     pub notify: NotificationService,
     pub counters: CounterFlushManager,
     pub indexer_metrics: SharedIndexerMetrics,
+    pub metrics: SharedPlatformMetrics,
     pub redpanda: Option<RedpandaProducer>,
+    pub embeddings: Arc<EmbeddingService>,
+    pub mysocial: Option<MySocialClient>,
 }
 
 impl ApiState {
@@ -20,15 +25,21 @@ impl ApiState {
         inner: AppState,
         notify: NotificationService,
         counters: CounterFlushManager,
-        indexer_metrics: SharedIndexerMetrics,
+        metrics: SharedPlatformMetrics,
         redpanda: Option<RedpandaProducer>,
+        embeddings: EmbeddingService,
+        mysocial: Option<MySocialClient>,
     ) -> Self {
+        let indexer_metrics = metrics.indexer.clone();
         Self {
             inner,
             notify,
             counters,
             indexer_metrics,
+            metrics,
             redpanda,
+            embeddings: Arc::new(embeddings),
+            mysocial,
         }
     }
 

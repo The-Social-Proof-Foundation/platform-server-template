@@ -1,4 +1,5 @@
 pub mod apns;
+pub mod fcm;
 pub mod resend;
 pub mod service;
 pub mod waitlist;

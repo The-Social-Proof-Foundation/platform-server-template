@@ -1,8 +1,10 @@
 pub mod health;
+pub mod interactions;
 pub mod invite;
-pub mod post;
+pub mod recommendations;
 pub mod referral;
 pub mod settings;
+pub mod social;
 pub mod streams;
 pub mod user;
 pub mod waitlist;

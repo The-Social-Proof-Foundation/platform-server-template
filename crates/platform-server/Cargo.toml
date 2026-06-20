@@ -16,6 +16,7 @@ platform-api = { path = "../platform-api" }
 platform-core = { path = "../platform-core" }
 platform-db = { path = "../platform-db" }
 platform-indexer = { path = "../platform-indexer" }
+platform-embeddings = { path = "../platform-embeddings" }
 platform-notify = { path = "../platform-notify" }
 tokio.workspace = true
 tracing.workspace = true

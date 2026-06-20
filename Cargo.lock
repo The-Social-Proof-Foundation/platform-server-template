@@ -1909,9 +1909,12 @@ dependencies = [
  "platform-analytics",
  "platform-core",
  "platform-db",
+ "platform-embeddings",
+ "platform-indexer",
  "platform-notify",
  "rand 0.8.6",
  "redis",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -1932,6 +1935,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dotenvy",
+ "prometheus",
  "redis",
  "serde",
  "serde_json",
@@ -1962,6 +1966,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "platform-embeddings"
+version = "0.1.0"
+dependencies = [
+ "platform-core",
+ "platform-db",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx 0.8.6",
+ "tracing",
+]
+
+[[package]]
 name = "platform-indexer"
 version = "0.1.0"
 dependencies = [
@@ -1972,6 +1989,7 @@ dependencies = [
  "myso-rpc",
  "platform-core",
  "platform-db",
+ "platform-embeddings",
  "platform-notify",
  "prost-types",
  "redis",
@@ -2017,6 +2035,7 @@ dependencies = [
  "platform-api",
  "platform-core",
  "platform-db",
+ "platform-embeddings",
  "platform-indexer",
  "platform-notify",
  "tokio",
@@ -2067,6 +2086,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "prometheus"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d33c28a30771f7f96db69893f78b857f7450d7e0237e9c8fc6427a81bae7ed1"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "protobuf",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "prost"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2097,6 +2131,12 @@ checksum = "f94967dc7688f3054c7fac87473ffae4cc4c3904800e2d9f5b857246d8963b0a"
 dependencies = [
  "prost",
 ]
+
+[[package]]
+name = "protobuf"
+version = "2.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
 name = "quanta"

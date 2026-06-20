@@ -1,4 +1,8 @@
+pub mod delivery;
+pub mod embeddings;
+pub mod graph_cache;
 pub mod counters;
+pub mod interactions;
 pub mod invite;
 pub mod migrations;
 pub mod outbox;
@@ -8,6 +12,11 @@ pub mod settings;
 pub mod user_references;
 pub mod waitlist;
 
+pub use delivery::{get_delivery_config, DeliveryConfigRow};
+pub use embeddings::{build_profile_text, upsert_content_embedding, upsert_profile_embedding};
+pub use interactions::{
+    insert_interaction, recent_interactions, update_engagement_patterns, InteractionRow,
+};
 pub use counters::{CounterFlushManager, ShardedCounter};
 pub use invite::{
     accept_invite, count_active_invites, count_circulating_invites, create_invite, get_invite_by_code,
@@ -22,12 +31,17 @@ pub use redis_store::{
 };
 pub use referral::{
     count_completed_referrals, list_referrals, on_referral_threshold_reached, record_referral,
-    referral_stats, resolve_referrer_by_code, ReferralRow, REFERRAL_MIN_ACCOUNT_AGE_DAYS,
-    REFERRALS_REQUIRED,
+    referral_stats, resolve_referrer_by_code, set_email_verification_token, verify_email_by_token,
+    EmailVerificationToken, RecordReferralOutcome, ReferralRewardResult, ReferralRow,
+    REFERRAL_MIN_ACCOUNT_AGE_DAYS, REFERRALS_REQUIRED,
+};
+pub use graph_cache::{
+    add_block, add_follow, blocked_count_for_wallet, get_post_author, get_post_platform,
+    list_blocked, list_follows, remove_block, remove_follow, set_post_author, set_post_platform,
 };
 pub use settings::{
-    blocked_count, delete_setting, get_bool_setting, get_setting, list_settings, upsert_setting,
-    UserSettingRow,
+    blocked_count, delete_setting, get_bool_setting, get_setting, list_settings,
+    notification_allowed, upsert_setting, NotificationChannel, UserSettingRow,
 };
 pub use user_references::{
     delete_reference, exists_reference, list_references, upsert_reference, ReferenceInput,

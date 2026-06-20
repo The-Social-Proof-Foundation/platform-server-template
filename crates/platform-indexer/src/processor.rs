@@ -2,6 +2,7 @@ use futures::StreamExt;
 use myso_rpc::field::{FieldMask, FieldMaskUtil};
 use myso_rpc::proto::myso::rpc::v2::Checkpoint;
 use myso_rpc::proto::myso::rpc::v2::SubscribeCheckpointsRequest;
+use platform_embeddings::EmbeddingService;
 use platform_notify::NotificationService;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
@@ -12,7 +13,7 @@ use crate::cursor::{get_checkpoint_cursor, record_chain_event, set_checkpoint_cu
 use crate::grpc::client::create_client;
 use crate::handlers::dispatcher::{handle_parsed_event, EventMeta};
 use crate::metrics::SharedIndexerMetrics;
-use crate::parsers::post_events::{parse_grpc_event, RawGrpcEvent};
+use crate::parsers::post_events::RawGrpcEvent;
 
 fn prost_json_to_serde(value: &prost_types::Value) -> serde_json::Value {
     use prost_types::value::Kind;
@@ -39,6 +40,7 @@ pub async fn process_checkpoint(
     pool: &PgPool,
     redis: &mut ConnectionManager,
     notify: &NotificationService,
+    embeddings: Option<&EmbeddingService>,
     platform_id: &str,
     checkpoint: myso_rpc::proto::myso::rpc::v2::Checkpoint,
     metrics: &SharedIndexerMetrics,
@@ -50,8 +52,8 @@ pub async fn process_checkpoint(
     let tx_events = collect_tx_events(&checkpoint);
 
     for (tx_digest, event_index, raw) in tx_events {
-        let Some(parsed) = parse_grpc_event(&raw) else {
-            metrics.events_skipped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let Some(parsed) = crate::parsers::parse_grpc_event(&raw) else {
+            metrics.inc_events_skipped();
             continue;
         };
 
@@ -71,7 +73,7 @@ pub async fn process_checkpoint(
         .await?;
 
         if !inserted {
-            metrics.events_skipped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            metrics.inc_events_skipped();
             continue;
         }
 
@@ -79,6 +81,7 @@ pub async fn process_checkpoint(
             pool,
             redis,
             notify,
+            embeddings,
             platform_id,
             parsed,
             EventMeta {
@@ -89,20 +92,15 @@ pub async fn process_checkpoint(
         .await
         {
             let msg = err.to_string();
-            if let Ok(mut guard) = metrics.last_error.lock() {
-                *guard = Some(msg.clone());
-            }
+            metrics.record_error(msg.clone());
             error!(error = %msg, "indexer handler failed");
         } else {
-            metrics.events_processed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            metrics.inc_events_processed();
         }
     }
 
     set_checkpoint_cursor(pool, seq_i64).await?;
-    metrics.checkpoints_processed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    if let Ok(mut guard) = metrics.last_checkpoint_seq.lock() {
-        *guard = Some(seq.to_string());
-    }
+    metrics.inc_checkpoint(seq);
     Ok(())
 }
 
@@ -159,6 +157,7 @@ pub async fn catch_up_checkpoints(
     pool: &PgPool,
     redis: &mut ConnectionManager,
     notify: &NotificationService,
+    embeddings: Option<&EmbeddingService>,
     config: &IndexerConfig,
     metrics: &SharedIndexerMetrics,
     from_seq: u64,
@@ -169,7 +168,16 @@ pub async fn catch_up_checkpoints(
             .await
             .map_err(|e| platform_core::AppError::Internal(e.to_string()))?
         {
-            process_checkpoint(pool, redis, notify, &config.platform_id, cp, metrics).await?;
+            process_checkpoint(
+                pool,
+                redis,
+                notify,
+                embeddings,
+                &config.platform_id,
+                cp,
+                metrics,
+            )
+            .await?;
         }
     }
     Ok(())
@@ -189,6 +197,7 @@ pub fn spawn_indexer(
     pool: PgPool,
     mut redis: ConnectionManager,
     notify: NotificationService,
+    embeddings: Option<EmbeddingService>,
     config: IndexerConfig,
     metrics: SharedIndexerMetrics,
 ) -> IndexerHandle {
@@ -264,6 +273,7 @@ pub fn spawn_indexer(
                             &pool,
                             &mut redis,
                             &notify,
+                            embeddings.as_ref(),
                             &config,
                             &metrics,
                             last + 1,
@@ -285,6 +295,7 @@ pub fn spawn_indexer(
                     &pool,
                     &mut redis,
                     &notify,
+                    embeddings.as_ref(),
                     &config.platform_id,
                     checkpoint,
                     &metrics,

@@ -7,8 +7,43 @@ pub struct SettingDefinition {
     pub description: Option<&'static str>,
 }
 
-/// Fork: add entries here, e.g. `SettingDefinition { key: "theme", default_value: Some("system"), description: Some("UI theme") }`
-pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[];
+pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
+    SettingDefinition {
+        key: "notify.push.enabled",
+        default_value: Some("true"),
+        description: Some("Enable push notifications (APNs + FCM)"),
+    },
+    SettingDefinition {
+        key: "notify.email.enabled",
+        default_value: Some("true"),
+        description: Some("Enable email notifications via Resend"),
+    },
+    SettingDefinition {
+        key: "notify.mentions",
+        default_value: Some("true"),
+        description: Some("Notify when mentioned in a post"),
+    },
+    SettingDefinition {
+        key: "notify.comments",
+        default_value: Some("true"),
+        description: Some("Notify on new comments"),
+    },
+    SettingDefinition {
+        key: "notify.likes",
+        default_value: Some("true"),
+        description: Some("Notify on likes"),
+    },
+    SettingDefinition {
+        key: "notify.referrals",
+        default_value: Some("true"),
+        description: Some("Notify on referral rewards and claims"),
+    },
+    SettingDefinition {
+        key: "referral.reward.claimed",
+        default_value: Some("false"),
+        description: Some("Whether referral reward has been claimed"),
+    },
+];
 
 pub fn known_keys() -> impl Iterator<Item = &'static str> {
     SETTING_DEFINITIONS.iter().map(|d| d.key)
@@ -22,10 +57,14 @@ pub fn default_for(key: &str) -> Option<&str> {
 }
 
 pub fn parse_bool(value: &str, fallback: bool) -> bool {
+    parse_bool_default(value).unwrap_or(fallback)
+}
+
+pub fn parse_bool_default(value: &str) -> Option<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" | "on" => true,
-        "0" | "false" | "no" | "off" => false,
-        _ => fallback,
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
     }
 }
 
@@ -50,8 +89,8 @@ mod tests {
     }
 
     #[test]
-    fn catalog_starts_empty() {
-        assert_eq!(SETTING_DEFINITIONS.len(), 0);
-        assert!(default_for("theme").is_none());
+    fn catalog_includes_notification_prefs() {
+        assert!(default_for("notify.push.enabled").is_some());
+        assert!(default_for("notify.mentions").is_some());
     }
 }

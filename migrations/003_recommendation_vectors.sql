@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS user_vectors (
 );
 
 CREATE TABLE IF NOT EXISTS content_vectors (
-    content_id UUID PRIMARY KEY,
+    content_id TEXT PRIMARY KEY,
     creator_wallet_address TEXT,
     platform_id TEXT,
     content_embedding vector(3072),
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS content_vectors (
 CREATE TABLE IF NOT EXISTS user_interactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     wallet_address TEXT NOT NULL,
-    content_id UUID NOT NULL,
+    content_id TEXT NOT NULL,
     interaction_type VARCHAR(20) NOT NULL,
     engagement_score FLOAT,
     watch_duration INTEGER,

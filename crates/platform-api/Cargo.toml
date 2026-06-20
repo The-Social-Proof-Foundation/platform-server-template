@@ -12,11 +12,14 @@ futures-util.workspace = true
 hex.workspace = true
 hmac.workspace = true
 jsonwebtoken.workspace = true
+platform-indexer = { path = "../platform-indexer" }
 platform-analytics = { path = "../platform-analytics" }
 platform-core = { path = "../platform-core" }
 platform-db = { path = "../platform-db" }
 platform-notify = { path = "../platform-notify" }
+platform-embeddings = { path = "../platform-embeddings" }
 redis.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

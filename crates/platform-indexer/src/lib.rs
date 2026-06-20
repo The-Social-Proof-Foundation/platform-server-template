@@ -12,6 +12,8 @@ pub use config::{load_from_env, IndexerConfig};
 pub use metrics::{IndexerMetrics, SharedIndexerMetrics};
 pub use processor::{spawn_indexer, IndexerHandle};
 
+pub use handlers::dispatcher::{handle_parsed_event, EventMeta};
+
 pub async fn check_startup_status(grpc_url: &str) -> Result<(), String> {
     grpc::client::check_startup_status(grpc_url).await
 }

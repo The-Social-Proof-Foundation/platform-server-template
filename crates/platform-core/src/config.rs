@@ -25,6 +25,7 @@ pub struct Config {
     pub myso_network: String,
     pub platform_id: Option<String>,
     pub stream_webhook_secret: Option<String>,
+    pub social_webhook_secret: Option<String>,
     pub redpanda_brokers: Option<String>,
     pub redpanda_ssl_enabled: bool,
     pub analytics_enabled: bool,
@@ -44,6 +45,15 @@ pub struct Config {
     pub waitlist_batch_admission_enabled: bool,
     pub waitlist_invite_bypass_enabled: bool,
     pub invite_circulation_public: bool,
+    pub metrics_enabled: bool,
+    pub metrics_port: u16,
+    pub metrics_bind: String,
+    pub openai_api_key: Option<String>,
+    pub openai_embedding_model: String,
+    pub embeddings_enabled: bool,
+    pub myso_graphql_url: Option<String>,
+    pub app_public_url: Option<String>,
+    pub email_verification_enabled: bool,
 }
 
 impl Config {
@@ -74,6 +84,7 @@ impl Config {
             myso_network: std::env::var("MYSO_NETWORK").unwrap_or_else(|_| "devnet".into()),
             platform_id: env_opt("PLATFORM_ID").or_else(|| env_opt("DRIPDROP_PLATFORM_ID")),
             stream_webhook_secret: env_opt("STREAM_WEBHOOK_SECRET"),
+            social_webhook_secret: env_opt("SOCIAL_WEBHOOK_SECRET"),
             redpanda_brokers: env_opt("REDPANDA_BROKERS"),
             redpanda_ssl_enabled: env_bool("REDPANDA_SSL_ENABLED", false),
             analytics_enabled: env_bool("ANALYTICS_ENABLED", false),
@@ -95,6 +106,17 @@ impl Config {
             waitlist_batch_admission_enabled: env_bool("WAITLIST_BATCH_ADMISSION_ENABLED", true),
             waitlist_invite_bypass_enabled: env_bool("WAITLIST_INVITE_BYPASS_ENABLED", true),
             invite_circulation_public: env_bool("INVITE_CIRCULATION_PUBLIC", true),
+            metrics_enabled: env_bool("METRICS_ENABLED", true),
+            metrics_port: env_parse("METRICS_PORT", 9091u16),
+            metrics_bind: std::env::var("METRICS_BIND")
+                .unwrap_or_else(|_| "127.0.0.1".into()),
+            openai_api_key: env_opt("OPENAI_API_KEY"),
+            openai_embedding_model: std::env::var("OPENAI_EMBEDDING_MODEL")
+                .unwrap_or_else(|_| "text-embedding-3-large".into()),
+            embeddings_enabled: env_bool("EMBEDDINGS_ENABLED", true),
+            myso_graphql_url: env_opt("MYSO_GRAPHQL_URL"),
+            app_public_url: env_opt("APP_PUBLIC_URL"),
+            email_verification_enabled: env_bool("EMAIL_VERIFICATION_ENABLED", true),
         })
     }
 
@@ -195,6 +217,7 @@ mod tests {
             myso_network: "devnet".into(),
             platform_id: None,
             stream_webhook_secret: None,
+            social_webhook_secret: None,
             redpanda_brokers: None,
             redpanda_ssl_enabled: false,
             analytics_enabled: false,
@@ -214,6 +237,15 @@ mod tests {
             waitlist_batch_admission_enabled: batch_admission,
             waitlist_invite_bypass_enabled: invite_bypass,
             invite_circulation_public: true,
+            metrics_enabled: true,
+            metrics_port: 9091,
+            metrics_bind: "127.0.0.1".into(),
+            openai_api_key: None,
+            openai_embedding_model: "text-embedding-3-large".into(),
+            embeddings_enabled: true,
+            myso_graphql_url: None,
+            app_public_url: None,
+            email_verification_enabled: true,
         }
     }
 

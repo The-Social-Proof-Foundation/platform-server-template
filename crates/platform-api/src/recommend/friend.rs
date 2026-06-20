@@ -25,6 +25,7 @@ impl FriendRecommendationEngine {
         limit: i64,
     ) -> platform_core::AppResult<Vec<FriendSuggestion>> {
         let blocked = self.cache.get_blocked_user_ids(wallet_address).await?;
+        let following = self.cache.get_following_user_ids(wallet_address).await?;
         let rows = sqlx::query(
             "WITH me AS (
                 SELECT profile_embedding FROM user_vectors WHERE wallet_address = $1
@@ -35,14 +36,13 @@ impl FriendRecommendationEngine {
                AND uv.profile_embedding IS NOT NULL
                AND uv.wallet_address <> $1
                AND NOT (uv.wallet_address = ANY($2))
-               AND uv.wallet_address NOT IN (
-                   SELECT followee_wallet_address FROM follows WHERE follower_wallet_address = $1
-               )
+               AND NOT (uv.wallet_address = ANY($3))
              ORDER BY score ASC
-             LIMIT $3",
+             LIMIT $4",
         )
         .bind(wallet_address)
         .bind(blocked)
+        .bind(following)
         .bind(limit)
         .fetch_all(&self.pool)
         .await?;

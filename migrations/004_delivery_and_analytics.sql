@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS platform_delivery_config (
     id BIGSERIAL PRIMARY KEY,
-    platform_id TEXT NOT NULL UNIQUE REFERENCES platforms (platform_id) ON DELETE CASCADE,
+    platform_id TEXT NOT NULL UNIQUE,
     apns_bundle_id TEXT,
     apns_key_id TEXT,
     apns_team_id TEXT,

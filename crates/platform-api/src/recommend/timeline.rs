@@ -64,6 +64,8 @@ impl TimelineRecommendationEngine {
                   {nsfw_filter}
                   {platform_filter}
                   AND NOT (cv.creator_wallet_address = ANY($3))
+                  AND COALESCE(cv.extra_metadata->>'deleted', 'false') <> 'true'
+                  AND COALESCE(cv.moderation_override, '') <> 'force_block'
                 ORDER BY cv.created_at DESC
                 LIMIT 500
              ),

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use platform_core::AppResult;
+use platform_core::{AppResult, SharedPlatformMetrics};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use sqlx::PgPool;
@@ -66,13 +66,15 @@ impl ShardedCounter {
 pub struct CounterFlushManager {
     pool: PgPool,
     pending: Arc<Mutex<HashMap<String, i64>>>,
+    metrics: Option<SharedPlatformMetrics>,
 }
 
 impl CounterFlushManager {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: PgPool, metrics: Option<SharedPlatformMetrics>) -> Self {
         Self {
             pool,
             pending: Arc::new(Mutex::new(HashMap::new())),
+            metrics,
         }
     }
 
@@ -87,6 +89,9 @@ impl CounterFlushManager {
             loop {
                 interval.tick().await;
                 if let Err(err) = self.flush_once(redis.clone()).await {
+                    if let Some(metrics) = &self.metrics {
+                        metrics.inc_counter_flush_error();
+                    }
                     warn!(error = %err, "counter flush failed");
                 }
             }
@@ -137,39 +142,6 @@ async fn flush_counter_to_postgres(
     delta: i64,
 ) -> AppResult<()> {
     match (entity_type, counter_type) {
-        ("user", "followerCount") => {
-            sqlx::query(
-                "UPDATE users SET follower_count = follower_count + $1 WHERE wallet_address = $2",
-            )
-            .bind(delta)
-            .bind(entity_id)
-            .execute(pool)
-            .await?;
-        }
-        ("user", "followingCount") => {
-            sqlx::query(
-                "UPDATE users SET following_count = following_count + $1 WHERE wallet_address = $2",
-            )
-            .bind(delta)
-            .bind(entity_id)
-            .execute(pool)
-            .await?;
-        }
-        ("user", "postCount") => {
-            sqlx::query(
-                "UPDATE users SET notification_count = notification_count WHERE wallet_address = $1",
-            )
-            .bind(entity_id)
-            .execute(pool)
-            .await?;
-            sqlx::query(
-                "UPDATE users SET follower_count = follower_count WHERE wallet_address = $1",
-            )
-            .bind(entity_id)
-            .execute(pool)
-            .await?;
-            let _ = delta;
-        }
         ("user", "notificationCount") => {
             sqlx::query(
                 "UPDATE users SET notification_count = notification_count + $1 WHERE user_id::text = $2 OR wallet_address = $2",

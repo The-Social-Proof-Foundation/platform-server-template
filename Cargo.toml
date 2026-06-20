@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/platform-core",
     "crates/platform-db",
+    "crates/platform-embeddings",
     "crates/platform-indexer",
     "crates/platform-api",
     "crates/platform-notify",
@@ -47,5 +48,6 @@ a2 = "0.10"
 clickhouse = { version = "0.13", features = ["inserter", "time"] }
 hex = "0.4"
 hmac = "0.12"
+prometheus = "0.13"
 sha2 = "0.10"
 myso-rpc = { path = "../myso-rust-sdk/crates/myso-rpc" }

@@ -46,7 +46,8 @@ pub async fn get_settings(
     Extension(auth): Extension<AuthUser>,
 ) -> ApiResult<Json<SettingsResponse>> {
     let rows = list_settings(state.pg_read(), &auth.user_id).await?;
-    let blocked = blocked_count(state.pg_read(), &auth.user_id).await?;
+    let mut redis = state.redis();
+    let blocked = blocked_count(state.pg_read(), &mut redis, &auth.user_id).await?;
     Ok(Json(SettingsResponse {
         settings: rows
             .into_iter()

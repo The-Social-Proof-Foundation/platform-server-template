@@ -1,0 +1,14 @@
+[package]
+name = "platform-embeddings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+platform-core = { path = "../platform-core" }
+platform-db = { path = "../platform-db" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tracing.workspace = true

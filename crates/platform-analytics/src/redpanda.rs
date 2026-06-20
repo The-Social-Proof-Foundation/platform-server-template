@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use platform_core::{AppResult, Config};
+use platform_core::{AppResult, Config, SharedPlatformMetrics};
 use platform_db::{fetch_unpublished_outbox, mark_outbox_published};
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
@@ -53,19 +53,30 @@ pub async fn publish_json(
     Ok(())
 }
 
-pub fn spawn_outbox_poller(pool: PgPool, producer: RedpandaProducer) {
+pub fn spawn_outbox_poller(
+    pool: PgPool,
+    producer: RedpandaProducer,
+    metrics: Option<SharedPlatformMetrics>,
+) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(2));
         loop {
             interval.tick().await;
-            if let Err(err) = poll_once(&pool, &producer).await {
+            if let Err(err) = poll_once(&pool, &producer, metrics.as_ref()).await {
+                if let Some(metrics) = metrics.as_ref() {
+                    metrics.inc_outbox_publish_error();
+                }
                 warn!(error = %err, "outbox poll failed");
             }
         }
     });
 }
 
-async fn poll_once(pool: &PgPool, producer: &FutureProducer) -> AppResult<()> {
+async fn poll_once(
+    pool: &PgPool,
+    producer: &FutureProducer,
+    metrics: Option<&SharedPlatformMetrics>,
+) -> AppResult<()> {
     let rows = fetch_unpublished_outbox(pool, 100).await?;
     for row in rows {
         let payload = serde_json::json!({
@@ -74,6 +85,9 @@ async fn poll_once(pool: &PgPool, producer: &FutureProducer) -> AppResult<()> {
         });
         publish_json(producer, &row.topic, &row.id.to_string(), &payload).await?;
         mark_outbox_published(pool, row.id).await?;
+        if let Some(metrics) = metrics {
+            metrics.inc_outbox_published();
+        }
     }
     Ok(())
 }

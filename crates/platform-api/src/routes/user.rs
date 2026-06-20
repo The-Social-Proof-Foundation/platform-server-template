@@ -1,6 +1,7 @@
-use axum::extract::{Extension, Path};
+use axum::extract::{Extension, Path, Query};
 use axum::Json;
 use platform_core::AppError;
+use rand::Rng;
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::FromRow;
@@ -82,8 +83,6 @@ pub struct UserRow {
     pub full_name: Option<String>,
     pub bio: Option<String>,
     pub role: String,
-    pub follower_count: i32,
-    pub following_count: i32,
     pub notification_count: i32,
 }
 
@@ -95,6 +94,108 @@ const UPDATABLE_FIELDS: &[(&str, &str)] = &[
     ("profile_image_icon", "profile_image_icon"),
     ("cover_image", "cover_image"),
 ];
+
+#[derive(Deserialize)]
+pub struct SetEmailRequest {
+    pub email: String,
+}
+
+#[derive(Deserialize)]
+pub struct VerifyEmailQuery {
+    pub token: String,
+}
+
+fn spawn_profile_embedding(state: &SharedApiState, user_id: &str) {
+    let state = state.clone();
+    let user_id = user_id.to_string();
+    tokio::spawn(async move {
+        let row: Option<(String, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT wallet_address, username, full_name, bio FROM users WHERE user_id = $1::uuid",
+        )
+        .bind(&user_id)
+        .fetch_optional(state.pg())
+        .await
+        .ok()
+        .flatten();
+
+        if let Some((wallet, username, full_name, bio)) = row {
+            let _ = state
+                .embeddings
+                .embed_and_store_profile(
+                    state.pg(),
+                    &wallet,
+                    username.as_deref(),
+                    full_name.as_deref(),
+                    bio.as_deref(),
+                )
+                .await
+                .inspect_err(|e| tracing::warn!("profile embedding failed: {e}"));
+        }
+    });
+}
+
+pub async fn set_email(
+    Extension(state): Extension<SharedApiState>,
+    Extension(auth): Extension<AuthUser>,
+    Json(body): Json<SetEmailRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if !state.config().email_verification_enabled {
+        return Err(AppError::BadRequest("email verification disabled".into()).into());
+    }
+    if !body.email.contains('@') {
+        return Err(AppError::BadRequest("invalid email".into()).into());
+    }
+
+    let token: String = rand::thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(48)
+        .map(char::from)
+        .collect();
+
+    platform_db::set_email_verification_token(state.pg(), &auth.user_id, &body.email, &token)
+        .await?;
+
+    let verify_url = state
+        .config()
+        .app_public_url
+        .as_deref()
+        .map(|base| format!("{base}/verify-email?token={token}"))
+        .unwrap_or_else(|| format!("/user/email/verify?token={token}"));
+
+    let mut redis = state.redis();
+    let _ = state
+        .notify
+        .deliver_notification(
+            state.pg(),
+            &mut redis,
+            &auth.user_id,
+            "Verify your email",
+            "Click the link in your email to verify your address",
+            "email_verification",
+            None,
+        )
+        .await;
+
+    if state.config().resend_api_key.is_some() {
+        let _ = state
+            .notify
+            .send_verification_email(&body.email, &verify_url)
+            .await
+            .inspect_err(|e| tracing::warn!("verification email failed: {e}"));
+    }
+
+    Ok(Json(json!({ "ok": true, "verificationSent": true })))
+}
+
+pub async fn verify_email(
+    Extension(state): Extension<SharedApiState>,
+    Query(query): Query<VerifyEmailQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let user_id = platform_db::verify_email_by_token(state.pg(), &query.token)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(Json(json!({ "ok": true, "userId": user_id })))
+}
 
 pub async fn request_signature(
     Extension(state): Extension<SharedApiState>,
@@ -134,7 +235,7 @@ pub async fn create_user(
     let user = sqlx::query_as::<_, UserRow>(
         "INSERT INTO users (wallet_address, public_key, chain_address, username, full_name, bio)
          VALUES ($1,$2,$3,$4,$5,$6)
-         RETURNING user_id, wallet_address, username, full_name, bio, role, follower_count, following_count, notification_count",
+         RETURNING user_id, wallet_address, username, full_name, bio, role, notification_count",
     )
     .bind(&wallet)
     .bind(&wallet)
@@ -208,20 +309,30 @@ pub async fn create_user(
             )
             .await
             {
-                Ok((inserted, bump_applied)) if inserted => {
+                Ok(outcome) if outcome.inserted => {
                     dispatch_referral_signup_notifications(
                         &state,
                         &referrer_id,
                         &user_id,
-                        bump_applied,
+                        outcome.bump_applied,
                     )
                     .await;
+                    if let Some(reward) = outcome.reward {
+                        let mut redis = state.redis();
+                        let _ = state
+                            .notify
+                            .notify_referral_reward(state.pg(), &mut redis, &reward.referrer_user_id)
+                            .await
+                            .inspect_err(|e| tracing::warn!("referral reward notification failed: {e}"));
+                    }
                 }
                 Ok(_) => {}
                 Err(err) => tracing::warn!("Failed to record referral: {err}"),
             }
         }
     }
+
+    after_user_profile_change(&state, &user_id);
 
     Ok((axum::http::StatusCode::CREATED, Json(user)))
 }
@@ -235,7 +346,7 @@ pub async fn login(
 
     let user: UserRow = if let Some(user_id) = body.user_id {
         sqlx::query_as(
-            "SELECT user_id, wallet_address, username, full_name, bio, role, follower_count, following_count, notification_count
+            "SELECT user_id, wallet_address, username, full_name, bio, role, notification_count
              FROM users WHERE user_id = $1::uuid AND LOWER(public_key) = $2",
         )
         .bind(user_id)
@@ -245,7 +356,7 @@ pub async fn login(
         .ok_or(AppError::Unauthorized)?
     } else {
         sqlx::query_as(
-            "SELECT user_id, wallet_address, username, full_name, bio, role, follower_count, following_count, notification_count
+            "SELECT user_id, wallet_address, username, full_name, bio, role, notification_count
              FROM users WHERE LOWER(public_key) = $1",
         )
         .bind(&wallet)
@@ -315,7 +426,7 @@ pub async fn get_user(
 ) -> ApiResult<Json<UserRow>> {
     let _ = auth;
     let user = sqlx::query_as(
-        "SELECT user_id, wallet_address, username, full_name, bio, role, follower_count, following_count, notification_count
+        "SELECT user_id, wallet_address, username, full_name, bio, role, notification_count
          FROM users WHERE user_id = $1::uuid OR wallet_address = $1",
     )
     .bind(id)
@@ -345,7 +456,7 @@ pub async fn update_user(
     values.push(auth.user_id.clone());
     let sql = format!(
         "UPDATE users SET {} WHERE user_id = ${}::uuid
-         RETURNING user_id, wallet_address, username, full_name, bio, role, follower_count, following_count, notification_count",
+         RETURNING user_id, wallet_address, username, full_name, bio, role, notification_count",
         sets.join(", "),
         values.len()
     );
@@ -354,7 +465,13 @@ pub async fn update_user(
     for value in values {
         query = query.bind(value);
     }
-    Ok(Json(query.fetch_one(state.pg()).await?))
+    let user = query.fetch_one(state.pg()).await?;
+    after_user_profile_change(&state, &auth.user_id);
+    Ok(Json(user))
+}
+
+fn after_user_profile_change(state: &SharedApiState, user_id: &str) {
+    spawn_profile_embedding(state, user_id);
 }
 
 pub async fn register_device_token(
@@ -373,89 +490,6 @@ pub async fn register_device_token(
     .execute(state.pg())
     .await?;
     Ok(Json(json!({ "ok": true })))
-}
-
-pub async fn follow_user(
-    Extension(state): Extension<SharedApiState>,
-    Extension(auth): Extension<AuthUser>,
-    Path(followee): Path<String>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let follower_wallet: (String,) = sqlx::query_as("SELECT wallet_address FROM users WHERE user_id = $1::uuid")
-        .bind(&auth.user_id)
-        .fetch_one(state.pg())
-        .await?;
-
-    let deleted = sqlx::query(
-        "DELETE FROM follows WHERE follower_wallet_address = $1 AND followee_wallet_address = $2",
-    )
-    .bind(&follower_wallet.0)
-    .bind(&followee)
-    .execute(state.pg())
-    .await?;
-
-    if deleted.rows_affected() > 0 {
-        return Ok(Json(json!({ "following": false })));
-    }
-
-    sqlx::query(
-        "INSERT INTO follows (follower_wallet_address, followee_wallet_address) VALUES ($1, $2)",
-    )
-    .bind(&follower_wallet.0)
-    .bind(&followee)
-    .execute(state.pg())
-    .await?;
-
-    Ok(Json(json!({ "following": true })))
-}
-
-pub async fn block_user(
-    Extension(state): Extension<SharedApiState>,
-    Extension(auth): Extension<AuthUser>,
-    Path(blocked): Path<String>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let blocker_wallet: (String,) = sqlx::query_as("SELECT wallet_address FROM users WHERE user_id = $1::uuid")
-        .bind(&auth.user_id)
-        .fetch_one(state.pg())
-        .await?;
-
-    let deleted = sqlx::query(
-        "DELETE FROM blocked WHERE blocker_wallet_address = $1 AND blocked_wallet_address = $2",
-    )
-    .bind(&blocker_wallet.0)
-    .bind(&blocked)
-    .execute(state.pg())
-    .await?;
-
-    if deleted.rows_affected() > 0 {
-        return Ok(Json(json!({ "blocked": false })));
-    }
-
-    sqlx::query(
-        "INSERT INTO blocked (blocker_wallet_address, blocked_wallet_address) VALUES ($1, $2)",
-    )
-    .bind(&blocker_wallet.0)
-    .bind(&blocked)
-    .execute(state.pg())
-    .await?;
-
-    Ok(Json(json!({ "blocked": true })))
-}
-
-pub async fn get_blocked(
-    Extension(state): Extension<SharedApiState>,
-    Extension(auth): Extension<AuthUser>,
-) -> ApiResult<Json<Vec<String>>> {
-    let wallet: (String,) = sqlx::query_as("SELECT wallet_address FROM users WHERE user_id = $1::uuid")
-        .bind(&auth.user_id)
-        .fetch_one(state.pg_read())
-        .await?;
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT blocked_wallet_address FROM blocked WHERE blocker_wallet_address = $1",
-    )
-    .bind(wallet.0)
-    .fetch_all(state.pg_read())
-    .await?;
-    Ok(Json(rows.into_iter().map(|r| r.0).collect()))
 }
 
 pub async fn get_notifications(

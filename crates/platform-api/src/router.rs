@@ -6,20 +6,19 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::middleware::{
-    rate_limit_auth, rate_limit_circulation, rate_limit_signature, require_auth,
-    require_internal_key, require_platform_access,
+    http_metrics_middleware, rate_limit_auth, rate_limit_circulation, rate_limit_signature,
+    require_auth, require_internal_key, require_platform_access,
 };
 use crate::routes;
 use crate::state::SharedApiState;
 use crate::ws;
+use platform_core::SharedPlatformMetrics;
 
-pub fn build_router(state: SharedApiState) -> Router {
+pub fn build_router(state: SharedApiState, metrics: SharedPlatformMetrics) -> Router {
     let config = state.config().clone();
 
     let authed_platform = Router::new()
         .route("/update", post(routes::user::update_user))
-        .route("/block/:blocked_id", post(routes::user::block_user))
-        .route("/blocked", get(routes::user::get_blocked))
         .route("/settings", get(routes::settings::get_settings))
         .route("/settings/catalog", get(routes::settings::get_settings_catalog))
         .route("/setting", post(routes::settings::upsert_setting_handler))
@@ -31,11 +30,12 @@ pub fn build_router(state: SharedApiState) -> Router {
         .route("/references", get(routes::settings::get_references))
         .route("/reference", post(routes::settings::upsert_reference_handler))
         .route("/reference", delete(routes::settings::delete_reference_handler))
-        .route("/follow/:followee_id", post(routes::user::follow_user))
         .route("/markNotificationsAsRead", post(routes::user::mark_notifications_read))
         .route("/device-token", post(routes::user::register_device_token))
+        .route("/email", post(routes::user::set_email))
+        .route("/email/verify", get(routes::user::verify_email))
         .route("/notifications", post(routes::user::get_notifications))
-        .route("/:id", get(routes::user::get_user))
+        .route("/{id}", get(routes::user::get_user))
         .route_layer(from_fn(require_platform_access))
         .route_layer(from_fn(require_auth));
 
@@ -52,24 +52,25 @@ pub fn build_router(state: SharedApiState) -> Router {
 
     let user = public_user.merge(signature).merge(authed_platform);
 
-    let post_routes = Router::new()
-        .route(
-            "/feed/following",
-            get(routes::post::following_feed)
-                .route_layer(from_fn(require_platform_access))
-                .route_layer(from_fn(require_auth)),
-        )
-        .route("/:user_id", get(routes::post::posts_by_user))
-        .route("/:post_id/data", get(routes::post::post_data));
-
     let recommendations = Router::new()
-        .route("/feed", get(routes::post::recommendation_feed))
-        .route("/friends", get(routes::post::friend_recommendations))
+        .route("/feed", get(routes::recommendations::recommendation_feed))
+        .route("/blended-feed", get(routes::recommendations::blended_feed))
+        .route("/friends", get(routes::recommendations::friend_recommendations))
+        .route_layer(from_fn(require_platform_access))
+        .route_layer(from_fn(require_auth));
+
+    let interactions = Router::new()
+        .route("/", post(routes::interactions::record_interaction))
+        .route("/batch", post(routes::interactions::record_interactions_batch))
         .route_layer(from_fn(require_platform_access))
         .route_layer(from_fn(require_auth));
 
     let indexer_metrics = Router::new()
-        .route("/indexer/metrics", get(routes::post::indexer_metrics))
+        .route("/indexer/metrics", get(routes::recommendations::indexer_metrics))
+        .route(
+            "/admin/content/{content_id}/moderate",
+            post(routes::recommendations::moderate_content),
+        )
         .route_layer(from_fn(require_internal_key));
 
     let performance = Router::new()
@@ -81,9 +82,10 @@ pub fn build_router(state: SharedApiState) -> Router {
         .route("/health", get(routes::health::health))
         .route("/ws", get(ws::ws_handler))
         .nest("/user", user)
-        .nest("/post", post_routes)
+        .nest("/interactions", interactions)
         .nest("/recommendations", recommendations.merge(indexer_metrics))
         .nest("/streams", Router::new().route("/webhook", post(routes::streams::webhook)))
+        .nest("/social", Router::new().route("/events", post(routes::social::social_events)))
         .nest("/performance", performance);
 
     if config.referrals_enabled {
@@ -113,11 +115,11 @@ pub fn build_router(state: SharedApiState) -> Router {
                 post(routes::waitlist::admin_grant_access_handler),
             )
             .route(
-                "/users/:id/approve",
+                "/users/{id}/approve",
                 post(routes::waitlist::admin_approve_user_handler),
             )
             .route(
-                "/users/:id/invites",
+                "/users/{id}/invites",
                 post(routes::waitlist::admin_user_invites_handler),
             )
             .route_layer(from_fn(require_internal_key));
@@ -132,7 +134,7 @@ pub fn build_router(state: SharedApiState) -> Router {
             .route_layer(from_fn(require_auth));
         let invites = Router::new()
             .merge(authed_invites)
-            .route("/:code", get(routes::invite::preview_invite_handler));
+            .route("/{code}", get(routes::invite::preview_invite_handler));
         router = router.nest("/invites", invites);
     }
 
@@ -144,6 +146,7 @@ pub fn build_router(state: SharedApiState) -> Router {
     }
 
     router
+        .route_layer(from_fn(http_metrics_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
@@ -151,5 +154,6 @@ pub fn build_router(state: SharedApiState) -> Router {
                 .allow_methods(Any)
                 .allow_headers(Any),
         )
+        .layer(Extension(metrics))
         .layer(Extension(state))
 }

@@ -1,11 +1,13 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use platform_analytics::{create_producer, ensure_clickhouse_schema, spawn_outbox_poller};
-use platform_api::{build_router, spawn_waitlist_processor, ApiState};
-use platform_core::{AppState, Config};
+use platform_api::{build_metrics_router, build_router, spawn_waitlist_processor, ApiState};
+use platform_api::mysocial::MySocialClient;
+use platform_core::{spawn_pg_pool_metrics_task, AppState, Config, PlatformMetrics};
 use platform_db::{default_migrations_dir, run_migrations, CounterFlushManager};
-use platform_indexer::{load_from_env, spawn_indexer, IndexerMetrics};
+use platform_embeddings::EmbeddingService;
+use platform_indexer::{load_from_env, spawn_indexer};
 use platform_notify::NotificationService;
 use tokio::signal;
 use tracing::{error, info};
@@ -20,14 +22,29 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState::new(config.clone()).await?;
     run_migrations(&app_state.pg_pool, default_migrations_dir()).await?;
 
-    let notify = NotificationService::new(&config)?;
-    let counters = CounterFlushManager::new(app_state.pg_pool.clone());
+    let metrics = Arc::new(PlatformMetrics::new(
+        &config.environment,
+        env!("CARGO_PKG_VERSION"),
+    ));
+    spawn_pg_pool_metrics_task(
+        metrics.clone(),
+        app_state.pg_pool.clone(),
+        app_state.pg_read_pool.clone(),
+    );
+
+    let notify = NotificationService::new(&config, Some(metrics.clone()))?;
+    let embeddings = EmbeddingService::from_config(&config)?;
+    let mysocial = MySocialClient::new(config.myso_graphql_url.clone());
+    let counters = CounterFlushManager::new(app_state.pg_pool.clone(), Some(metrics.clone()));
     counters.clone().spawn_flush_task(app_state.redis.clone());
 
-    let indexer_metrics = Arc::new(IndexerMetrics::default());
     let redpanda = create_producer(&config)?;
     if let Some(producer) = redpanda.clone() {
-        spawn_outbox_poller(app_state.pg_pool.clone(), producer);
+        spawn_outbox_poller(
+            app_state.pg_pool.clone(),
+            producer,
+            Some(metrics.clone()),
+        );
     }
     ensure_clickhouse_schema(&config).await?;
 
@@ -35,8 +52,10 @@ async fn main() -> anyhow::Result<()> {
         app_state.clone(),
         notify.clone(),
         counters.clone(),
-        indexer_metrics.clone(),
+        metrics.clone(),
         redpanda,
+        embeddings.clone(),
+        mysocial,
     );
 
     let mut indexer_handle = None;
@@ -50,15 +69,37 @@ async fn main() -> anyhow::Result<()> {
             app_state.pg_pool.clone(),
             app_state.redis.clone(),
             notify,
+            Some(embeddings),
             indexer_config,
-            indexer_metrics,
+            metrics.indexer.clone(),
         ));
     }
 
     let shared_state = Arc::new(api_state);
     spawn_waitlist_processor(shared_state.clone());
 
-    let router = build_router(shared_state);
+    if config.metrics_enabled {
+        let bind: IpAddr = config
+            .metrics_bind
+            .parse()
+            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let metrics_port = config.metrics_port;
+        let metrics_router = build_metrics_router(metrics.clone());
+        tokio::spawn(async move {
+            let addr = SocketAddr::new(bind, metrics_port);
+            match tokio::net::TcpListener::bind(addr).await {
+                Ok(listener) => {
+                    info!(%addr, "metrics server listening");
+                    if let Err(err) = axum::serve(listener, metrics_router).await {
+                        error!(error = %err, "metrics server failed");
+                    }
+                }
+                Err(err) => error!(error = %err, %addr, "failed to bind metrics server"),
+            }
+        });
+    }
+
+    let router = build_router(shared_state, metrics);
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     info!(%addr, "platform-server listening");
 

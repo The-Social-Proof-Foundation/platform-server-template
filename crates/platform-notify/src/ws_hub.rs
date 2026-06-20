@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
+use platform_core::SharedPlatformMetrics;
 use tokio::sync::{broadcast, RwLock};
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -13,14 +14,25 @@ pub struct WsOutbound {
     pub data: serde_json::Value,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct WsHub {
     sessions: Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>,
+    metrics: Option<SharedPlatformMetrics>,
 }
 
 impl WsHub {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(metrics: Option<SharedPlatformMetrics>) -> Self {
+        Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            metrics,
+        }
+    }
+
+    async fn refresh_connection_gauge(&self) {
+        if let Some(metrics) = &self.metrics {
+            let sessions = self.sessions.read().await;
+            metrics.set_ws_connections(sessions.len());
+        }
     }
 
     pub async fn register(&self, user_id: String) -> broadcast::Receiver<String> {
@@ -28,12 +40,17 @@ impl WsHub {
         let sender = sessions
             .entry(user_id.clone())
             .or_insert_with(|| broadcast::channel(256).0);
-        sender.subscribe()
+        let rx = sender.subscribe();
+        drop(sessions);
+        self.refresh_connection_gauge().await;
+        rx
     }
 
     pub async fn unregister(&self, user_id: &str) {
         let mut sessions = self.sessions.write().await;
         sessions.remove(user_id);
+        drop(sessions);
+        self.refresh_connection_gauge().await;
     }
 
     pub async fn send_to_user(&self, user_id: &str, payload: WsOutbound) -> bool {
@@ -71,5 +88,11 @@ impl WsHub {
 
         forward.abort();
         self.unregister(&user_id).await;
+    }
+}
+
+impl Default for WsHub {
+    fn default() -> Self {
+        Self::new(None)
     }
 }

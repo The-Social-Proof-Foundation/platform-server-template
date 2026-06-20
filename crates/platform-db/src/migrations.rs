@@ -17,6 +17,76 @@ fn normalize_migration_sql(sql: &str) -> String {
         .to_string()
 }
 
+/// Strip SQL comments so semicolons inside comments do not split statements.
+pub fn strip_sql_comments(sql: &str) -> String {
+    let mut out = String::with_capacity(sql.len());
+    let mut chars = sql.chars().peekable();
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut in_single_quote = false;
+
+    while let Some(c) = chars.next() {
+        if in_line_comment {
+            if c == '\n' {
+                in_line_comment = false;
+                out.push(c);
+            }
+            continue;
+        }
+        if in_block_comment {
+            if c == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if in_single_quote {
+            out.push(c);
+            if c == '\'' {
+                if chars.peek() == Some(&'\'') {
+                    out.push(chars.next().unwrap());
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            continue;
+        }
+
+        if c == '-' && chars.peek() == Some(&'-') {
+            chars.next();
+            in_line_comment = true;
+            continue;
+        }
+        if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            in_block_comment = true;
+            continue;
+        }
+        if c == '\'' {
+            in_single_quote = true;
+            out.push(c);
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn split_migration_statements(sql: &str) -> Vec<String> {
+    let stripped = strip_sql_comments(sql);
+    stripped
+        .split(';')
+        .map(str::trim)
+        .filter(|statement| {
+            !statement.is_empty()
+                && !statement
+                    .lines()
+                    .all(|line| line.trim().is_empty() || line.trim().starts_with("--"))
+        })
+        .map(|statement| statement.to_string())
+        .collect()
+}
+
 pub async fn run_migrations(pool: &PgPool, migrations_dir: impl AsRef<Path>) -> AppResult<()> {
     let migrations_dir = migrations_dir.as_ref();
     let mut conn = pool.acquire().await?;
@@ -66,7 +136,9 @@ pub async fn run_migrations(pool: &PgPool, migrations_dir: impl AsRef<Path>) -> 
         info!(filename, "applying migration");
 
         let mut tx = pool.begin().await?;
-        sqlx::query(&sql).execute(&mut *tx).await?;
+        for statement in split_migration_statements(&sql) {
+            sqlx::query(&statement).execute(&mut *tx).await?;
+        }
         sqlx::query(&format!(
             "INSERT INTO {MIGRATIONS_TABLE} (filename) VALUES ($1)"
         ))
@@ -81,4 +153,27 @@ pub async fn run_migrations(pool: &PgPool, migrations_dir: impl AsRef<Path>) -> 
 
 pub fn default_migrations_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_comments_preserves_semicolons_in_comments() {
+        let sql = "-- note; with semicolon\nCREATE TABLE t (id INT);";
+        let stripped = strip_sql_comments(sql);
+        assert!(stripped.contains("CREATE TABLE t (id INT)"));
+        assert!(!stripped.contains("note"));
+        let statements = split_migration_statements(sql);
+        assert_eq!(statements.len(), 1);
+        assert!(statements[0].starts_with("CREATE TABLE"));
+    }
+
+    #[test]
+    fn split_multiple_statements() {
+        let sql = "CREATE TABLE a (id INT); CREATE TABLE b (id INT);";
+        let statements = split_migration_statements(sql);
+        assert_eq!(statements.len(), 2);
+    }
 }

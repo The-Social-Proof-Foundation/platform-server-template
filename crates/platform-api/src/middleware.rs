@@ -1,8 +1,11 @@
-use axum::extract::{Extension, Request};
+use std::time::Instant;
+
+use axum::extract::{Extension, MatchedPath, Request};
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use platform_core::SharedPlatformMetrics;
 use serde_json::json;
 
 use crate::auth::jwt::verify_access_token;
@@ -158,4 +161,21 @@ fn client_ip(req: &Request) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or("unknown")
         .to_string()
+}
+
+pub async fn http_metrics_middleware(
+    Extension(metrics): Extension<SharedPlatformMetrics>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let method = req.method().as_str().to_string();
+    let route = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|matched| matched.as_str().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let start = Instant::now();
+    let response = next.run(req).await;
+    metrics.observe_http_request(&method, &route, response.status().as_u16(), start.elapsed());
+    response
 }
