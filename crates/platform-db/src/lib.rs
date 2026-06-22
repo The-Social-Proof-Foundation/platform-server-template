@@ -8,6 +8,7 @@ pub mod migrations;
 pub mod outbox;
 pub mod redis_store;
 pub mod referral;
+pub mod search_history;
 pub mod settings;
 pub mod user_references;
 pub mod waitlist;
@@ -34,6 +35,10 @@ pub use referral::{
     referral_stats, resolve_referrer_by_code, set_email_verification_token, verify_email_by_token,
     EmailVerificationToken, RecordReferralOutcome, ReferralRewardResult, ReferralRow,
     REFERRAL_MIN_ACCOUNT_AGE_DAYS, REFERRALS_REQUIRED,
+};
+pub use search_history::{
+    clear_search_history, delete_search_history_entry, list_search_history, record_search,
+    SearchHistoryRow, MAX_SEARCH_HISTORY_PER_USER,
 };
 pub use graph_cache::{
     add_block, add_follow, blocked_count_for_wallet, get_post_author, get_post_platform,

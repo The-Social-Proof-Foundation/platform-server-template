@@ -4,6 +4,7 @@ use std::sync::Arc;
 use platform_analytics::{create_producer, ensure_clickhouse_schema, spawn_outbox_poller};
 use platform_api::{build_metrics_router, build_router, spawn_waitlist_processor, ApiState};
 use platform_api::mysocial::MySocialClient;
+use platform_api::indexer::IndexerSearchClient;
 use platform_core::{spawn_pg_pool_metrics_task, AppState, Config, PlatformMetrics};
 use platform_db::{default_migrations_dir, run_migrations, CounterFlushManager};
 use platform_embeddings::EmbeddingService;
@@ -35,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
     let notify = NotificationService::new(&config, Some(metrics.clone()))?;
     let embeddings = EmbeddingService::from_config(&config)?;
     let mysocial = MySocialClient::new(config.myso_graphql_url.clone());
+    let indexer_search = IndexerSearchClient::new(config.social_indexer_url.clone());
     let counters = CounterFlushManager::new(app_state.pg_pool.clone(), Some(metrics.clone()));
     counters.clone().spawn_flush_task(app_state.redis.clone());
 
@@ -56,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
         redpanda,
         embeddings.clone(),
         mysocial,
+        indexer_search,
     );
 
     let mut indexer_handle = None;

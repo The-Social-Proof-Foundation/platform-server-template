@@ -39,6 +39,11 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         description: Some("Notify on referral rewards and claims"),
     },
     SettingDefinition {
+        key: "content.nsfw.allow",
+        default_value: Some("false"),
+        description: Some("Include NSFW content in search and discovery results"),
+    },
+    SettingDefinition {
         key: "referral.reward.claimed",
         default_value: Some("false"),
         description: Some("Whether referral reward has been claimed"),

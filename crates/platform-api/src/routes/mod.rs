@@ -3,6 +3,7 @@ pub mod interactions;
 pub mod invite;
 pub mod recommendations;
 pub mod referral;
+pub mod search;
 pub mod settings;
 pub mod social;
 pub mod streams;

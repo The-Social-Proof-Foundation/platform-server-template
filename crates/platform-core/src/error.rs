@@ -18,6 +18,8 @@ pub enum AppError {
     Conflict(String),
     #[error("too many requests")]
     TooManyRequests,
+    #[error("bad gateway: {0}")]
+    BadGateway(String),
     #[error("internal error: {0}")]
     Internal(String),
     #[error(transparent)]
@@ -41,6 +43,7 @@ impl AppError {
             Self::BadRequest(_) => 400,
             Self::Conflict(_) => 409,
             Self::TooManyRequests => 429,
+            Self::BadGateway(_) => 502,
             Self::Config(_) => 503,
             _ => 500,
         }

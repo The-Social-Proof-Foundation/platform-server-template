@@ -52,6 +52,7 @@ pub struct Config {
     pub openai_embedding_model: String,
     pub embeddings_enabled: bool,
     pub myso_graphql_url: Option<String>,
+    pub social_indexer_url: Option<String>,
     pub app_public_url: Option<String>,
     pub email_verification_enabled: bool,
 }
@@ -115,6 +116,7 @@ impl Config {
                 .unwrap_or_else(|_| "text-embedding-3-large".into()),
             embeddings_enabled: env_bool("EMBEDDINGS_ENABLED", true),
             myso_graphql_url: env_opt("MYSO_GRAPHQL_URL"),
+            social_indexer_url: env_opt("SOCIAL_INDEXER_URL"),
             app_public_url: env_opt("APP_PUBLIC_URL"),
             email_verification_enabled: env_bool("EMAIL_VERIFICATION_ENABLED", true),
         })
@@ -244,6 +246,7 @@ mod tests {
             openai_embedding_model: "text-embedding-3-large".into(),
             embeddings_enabled: true,
             myso_graphql_url: None,
+            social_indexer_url: None,
             app_public_url: None,
             email_verification_enabled: true,
         }

@@ -65,6 +65,13 @@ pub fn build_router(state: SharedApiState, metrics: SharedPlatformMetrics) -> Ro
         .route_layer(from_fn(require_platform_access))
         .route_layer(from_fn(require_auth));
 
+    let search = Router::new()
+        .route("/", get(routes::search::search_handler))
+        .route("/history", get(routes::search::list_search_history_handler))
+        .route("/history", delete(routes::search::delete_search_history_handler))
+        .route_layer(from_fn(require_platform_access))
+        .route_layer(from_fn(require_auth));
+
     let indexer_metrics = Router::new()
         .route("/indexer/metrics", get(routes::recommendations::indexer_metrics))
         .route(
@@ -83,6 +90,7 @@ pub fn build_router(state: SharedApiState, metrics: SharedPlatformMetrics) -> Ro
         .route("/ws", get(ws::ws_handler))
         .nest("/user", user)
         .nest("/interactions", interactions)
+        .nest("/search", search)
         .nest("/recommendations", recommendations.merge(indexer_metrics))
         .nest("/streams", Router::new().route("/webhook", post(routes::streams::webhook)))
         .nest("/social", Router::new().route("/events", post(routes::social::social_events)))

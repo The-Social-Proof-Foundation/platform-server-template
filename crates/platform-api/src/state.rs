@@ -6,6 +6,7 @@ use platform_db::CounterFlushManager;
 use platform_embeddings::EmbeddingService;
 use platform_notify::NotificationService;
 
+use crate::indexer::IndexerSearchClient;
 use crate::mysocial::MySocialClient;
 
 #[derive(Clone)]
@@ -18,6 +19,7 @@ pub struct ApiState {
     pub redpanda: Option<RedpandaProducer>,
     pub embeddings: Arc<EmbeddingService>,
     pub mysocial: Option<MySocialClient>,
+    pub indexer_search: Option<IndexerSearchClient>,
 }
 
 impl ApiState {
@@ -29,6 +31,7 @@ impl ApiState {
         redpanda: Option<RedpandaProducer>,
         embeddings: EmbeddingService,
         mysocial: Option<MySocialClient>,
+        indexer_search: Option<IndexerSearchClient>,
     ) -> Self {
         let indexer_metrics = metrics.indexer.clone();
         Self {
@@ -40,6 +43,7 @@ impl ApiState {
             redpanda,
             embeddings: Arc::new(embeddings),
             mysocial,
+            indexer_search,
         }
     }
 

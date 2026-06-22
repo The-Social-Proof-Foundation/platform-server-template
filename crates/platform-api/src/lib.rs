@@ -1,11 +1,13 @@
 pub mod auth;
 pub mod error;
+pub mod indexer;
 pub mod metrics_server;
 pub mod middleware;
 pub mod mysocial;
 pub mod recommend;
 pub mod router;
 pub mod routes;
+pub mod search;
 pub mod state;
 pub mod waitlist_events;
 pub mod waitlist_processor;

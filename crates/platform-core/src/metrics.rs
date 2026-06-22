@@ -127,6 +127,7 @@ pub struct PlatformMetrics {
     pg_pool_connections_idle: Gauge,
     pg_read_pool_connections_active: Gauge,
     pg_read_pool_connections_idle: Gauge,
+    search_requests_total: Counter,
 }
 
 impl PlatformMetrics {
@@ -227,6 +228,13 @@ impl PlatformMetrics {
         )
         .expect("register pg_read_pool_connections_idle");
 
+        let search_requests_total = register_counter_with_registry!(
+            "search_requests_total",
+            "Total authenticated search requests served",
+            registry
+        )
+        .expect("register search_requests_total");
+
         Self {
             registry,
             indexer,
@@ -241,6 +249,7 @@ impl PlatformMetrics {
             pg_pool_connections_idle,
             pg_read_pool_connections_active,
             pg_read_pool_connections_idle,
+            search_requests_total,
         }
     }
 
@@ -274,6 +283,10 @@ impl PlatformMetrics {
 
     pub fn inc_counter_flush_error(&self) {
         self.counter_flush_errors_total.inc();
+    }
+
+    pub fn inc_search_request(&self) {
+        self.search_requests_total.inc();
     }
 
     pub fn update_pg_pool_stats(&self, pool: &PgPool, read_pool: &PgPool) {

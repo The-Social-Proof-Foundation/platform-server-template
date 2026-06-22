@@ -102,6 +102,7 @@ See [`.env.example`](.env.example) for the full list. Key variables:
 | `OPENAI_EMBEDDING_MODEL` | Embedding model (default `text-embedding-3-large`) |
 | `EMBEDDINGS_ENABLED` | Set `false` to skip OpenAI calls in dev (default `true`) |
 | `MYSO_GRAPHQL_URL` | MySocial GraphQL endpoint for blended feed following slice |
+| `SOCIAL_INDEXER_URL` | MySocial social indexer base URL for `GET /search` proxy |
 | `APP_PUBLIC_URL` | Base URL for email verification links |
 | `EMAIL_VERIFICATION_ENABLED` | Enable `POST /user/email` verification flow (default `true`) |
 | `FCM_SERVER_KEY` | Global FCM fallback (per-platform key in `platform_delivery_config`) |
@@ -228,6 +229,9 @@ Social mutations (create post, follow, like, comment, block) are **not** exposed
 - `GET /recommendations/feed` — pgvector timeline feed (chain post IDs)
 - `GET /recommendations/blended-feed?chronoLimit=50&discoverLimit=50` — MySocial following posts + vector discovery merge
 - `GET /recommendations/friends` — profile embedding suggestions
+- `GET /search?q=&limit=&filter_types=` — authenticated proxy to MySocial social indexer search; enriches posts with `platformMetrics` from `content_vectors`, filters blocked/NSFW/moderated content, supports `filter_types=profile,post,platforms`; records query in search history
+- `GET /search/history?limit=20` — recent search queries for the authenticated user (newest first)
+- `DELETE /search/history?q=foo` — remove one history entry; omit `q` (or send empty body) to clear all history
 - `POST /interactions` — single engagement event (watch/open/skip/share)
 - `POST /interactions/batch` — up to 50 events per request
 - `POST /user/email` — set email and send verification link (requires `APP_PUBLIC_URL` + Resend)
@@ -379,4 +383,4 @@ Parser unit tests live in `platform-indexer` (`post_events`).
 - Moralis / CoinGecko wallet routes
 - REST endpoints for create post / like / comment / follow / block (use on-chain txs + MySocial GraphQL)
 - ClickHouse consumer implementation
-- Full-text search index
+- Local full-text search index (search is proxied to hosted MySocial social indexer via `GET /search`)
