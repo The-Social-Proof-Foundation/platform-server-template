@@ -1,6 +1,6 @@
 # Platform Server Template (Rust)
 
-Production-ready Rust backend template for MySo social platforms. **MySocial GraphQL** is the read path for on-chain social data (posts, profiles, graph). This server owns **wallet auth**, **waitlist/referrals**, **pgvector recommendations**, **push/email/WS notifications**, and **platform-specific side effects** driven by a gRPC checkpoint stream or inbound social webhooks — not a duplicate social indexer.
+Production-ready Rust backend template for the MySocial platforms. GraphQL is the read path for on-chain social data (posts, profiles, graph). This server owns **wallet auth**, **waitlist/referrals**, **pgvector recommendations**, **push/email/WS notifications**, and **platform-specific side effects** driven by a gRPC checkpoint stream or inbound social webhooks.
 
 ## Renaming the template
 
