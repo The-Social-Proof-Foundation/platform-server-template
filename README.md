@@ -356,7 +356,7 @@ OpenAI embeddings run via `platform-embeddings` when `OPENAI_API_KEY` is set. Se
 
 ## Deploy
 
-Build from the **ProjectYZ monorepo root** (the Dockerfile copies `myso-rust-sdk` for the path dependency):
+Build from the **monorepo root** (the Dockerfile copies `myso-rust-sdk` for the path dependency):
 
 ```bash
 cd ..
@@ -376,11 +376,3 @@ cargo run -p platform-server
 ```
 
 Parser unit tests live in `platform-indexer` (`post_events`).
-
-## Out of scope (v1)
-
-- Neo4j social graph
-- Moralis / CoinGecko wallet routes
-- REST endpoints for create post / like / comment / follow / block (use on-chain txs + MySocial GraphQL)
-- ClickHouse consumer implementation
-- Local full-text search index (search is proxied to hosted MySocial social indexer via `GET /search`)
