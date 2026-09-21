@@ -55,6 +55,11 @@ pub struct Config {
     pub social_indexer_url: Option<String>,
     pub app_public_url: Option<String>,
     pub email_verification_enabled: bool,
+    pub wallet_auth_enabled: bool,
+    pub mysocial_jwks_url: Option<String>,
+    pub mysocial_jwt_issuer: Option<String>,
+    pub mysocial_client_id: Option<String>,
+    pub cors_allowed_origins: Option<String>,
 }
 
 impl Config {
@@ -119,6 +124,11 @@ impl Config {
             social_indexer_url: env_opt("SOCIAL_INDEXER_URL"),
             app_public_url: env_opt("APP_PUBLIC_URL"),
             email_verification_enabled: env_bool("EMAIL_VERIFICATION_ENABLED", true),
+            wallet_auth_enabled: env_bool("WALLET_AUTH_ENABLED", true),
+            mysocial_jwks_url: env_opt("MYSOCIAL_JWKS_URL"),
+            mysocial_jwt_issuer: env_opt("MYSOCIAL_JWT_ISSUER"),
+            mysocial_client_id: env_opt("MYSOCIAL_CLIENT_ID"),
+            cors_allowed_origins: env_opt("CORS_ALLOWED_ORIGINS"),
         })
     }
 
@@ -249,6 +259,11 @@ mod tests {
             social_indexer_url: None,
             app_public_url: None,
             email_verification_enabled: true,
+            wallet_auth_enabled: true,
+            mysocial_jwks_url: None,
+            mysocial_jwt_issuer: None,
+            mysocial_client_id: None,
+            cors_allowed_origins: None,
         }
     }
 

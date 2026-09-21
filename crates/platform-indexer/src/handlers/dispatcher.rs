@@ -36,7 +36,7 @@ pub async fn handle_parsed_event(
             handle_reaction(pool, redis, notify, platform_id, data).await
         }
         ParsedChainEvent::RemoveReaction(_) => Ok(()),
-        ParsedChainEvent::Tip(_) => Ok(()),
+        ParsedChainEvent::Tip(data) => handle_tip(pool, redis, notify, platform_id, data).await,
         ParsedChainEvent::PostDeleted(data) => handle_post_deleted(pool, data).await,
         ParsedChainEvent::CommentDeleted(_) => Ok(()),
         ParsedChainEvent::PostUpdated(data) => {
@@ -44,7 +44,10 @@ pub async fn handle_parsed_event(
         }
         ParsedChainEvent::CommentUpdated(_) => Ok(()),
         ParsedChainEvent::Follow(data) => {
-            graph_cache::add_follow(redis, &data.follower, &data.following).await
+            graph_cache::add_follow(redis, &data.follower, &data.following).await?;
+            notify
+                .notify_follow(pool, redis, &data.following, &data.follower)
+                .await
         }
         ParsedChainEvent::Unfollow(data) => {
             graph_cache::remove_follow(redis, &data.follower, &data.unfollowed).await
@@ -118,7 +121,23 @@ async fn handle_post_created(
         )
         .await?;
 
+    if is_repost(data.post_type.as_deref()) {
+        if let Some(parent_id) = data.parent_post_id.as_deref() {
+            if let Some(author) = graph_cache::get_post_author(redis, parent_id).await? {
+                if !author.is_empty() {
+                    notify
+                        .notify_repost(pool, redis, &author, &wallet, parent_id)
+                        .await?;
+                }
+            }
+        }
+    }
+
     Ok(())
+}
+
+fn is_repost(post_type: Option<&str>) -> bool {
+    matches!(post_type, Some("repost" | "quote_repost"))
 }
 
 async fn handle_comment_created(
@@ -194,6 +213,40 @@ async fn handle_reaction(
             .await?;
     }
     Ok(())
+}
+
+async fn handle_tip(
+    pool: &PgPool,
+    redis: &mut ConnectionManager,
+    notify: &NotificationService,
+    platform_id: &str,
+    data: crate::parsers::post_events::TipPayload,
+) -> AppResult<()> {
+    if data.is_post {
+        if let Some(post_platform) = graph_cache::get_post_platform(redis, &data.object_id).await? {
+            if !post_platform.eq_ignore_ascii_case(platform_id) {
+                return Ok(());
+            }
+        }
+    }
+
+    let from = resolve_wallet_from_chain_address(pool, &data.from)
+        .await?
+        .unwrap_or_else(|| data.from.to_lowercase());
+    let to = resolve_wallet_from_chain_address(pool, &data.to)
+        .await?
+        .unwrap_or_else(|| data.to.to_lowercase());
+
+    notify
+        .notify_tip(
+            pool,
+            redis,
+            &to,
+            &from,
+            &data.object_id,
+            &data.amount.to_string(),
+        )
+        .await
 }
 
 async fn handle_post_deleted(

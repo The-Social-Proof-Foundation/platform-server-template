@@ -5,7 +5,6 @@ use rand::Rng;
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::FromRow;
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::auth::jwt::{
@@ -159,7 +158,7 @@ pub async fn set_email(
         .config()
         .app_public_url
         .as_deref()
-        .map(|base| format!("{base}/verify-email?token={token}"))
+        .map(|base| format!("{base}/user/email/verify?token={token}"))
         .unwrap_or_else(|| format!("/user/email/verify?token={token}"));
 
     let mut redis = state.redis();
@@ -194,6 +193,28 @@ pub async fn verify_email(
     let user_id = platform_db::verify_email_by_token(state.pg(), &query.token)
         .await?
         .ok_or(AppError::NotFound)?;
+
+    if state.config().resend_api_key.is_some() {
+        let email: Option<String> = sqlx::query_scalar(
+            "SELECT email FROM users WHERE user_id = $1::uuid AND email IS NOT NULL",
+        )
+        .bind(&user_id)
+        .fetch_optional(state.pg())
+        .await?;
+        if let Some(email) = email {
+            let app_url = state
+                .config()
+                .app_public_url
+                .clone()
+                .unwrap_or_else(|| "https://www.mysocial.network".into());
+            let _ = state
+                .notify
+                .send_welcome_email(&email, &app_url)
+                .await
+                .inspect_err(|e| tracing::warn!("welcome email failed: {e}"));
+        }
+    }
+
     Ok(Json(json!({ "ok": true, "userId": user_id })))
 }
 
@@ -495,39 +516,19 @@ pub async fn register_device_token(
 pub async fn get_notifications(
     Extension(state): Extension<SharedApiState>,
     Extension(auth): Extension<AuthUser>,
-) -> ApiResult<Json<Vec<serde_json::Value>>> {
-    let rows = sqlx::query(
-        "SELECT notification_id, type, object_id, object_type, title, message, created_at
-         FROM notifications WHERE user_id = $1::uuid ORDER BY created_at DESC LIMIT 100",
-    )
-    .bind(&auth.user_id)
-    .fetch_all(state.pg_read())
-    .await?;
-
-    let notifications = rows
-        .into_iter()
-        .map(|row| {
-            json!({
-                "notificationId": row.get::<Uuid, _>("notification_id"),
-                "type": row.get::<String, _>("type"),
-                "objectId": row.get::<Option<String>, _>("object_id"),
-                "objectType": row.get::<Option<String>, _>("object_type"),
-                "title": row.get::<Option<String>, _>("title"),
-                "message": row.get::<Option<String>, _>("message"),
-                "createdAt": row.get::<i64, _>("created_at"),
-            })
-        })
-        .collect();
-    Ok(Json(notifications))
+    Query(query): Query<crate::notifications::NotificationListQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(
+        crate::notifications::list_notifications(&state, &auth, query).await?,
+    ))
 }
 
 pub async fn mark_notifications_read(
     Extension(state): Extension<SharedApiState>,
     Extension(auth): Extension<AuthUser>,
+    Json(body): Json<crate::notifications::MarkReadRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    sqlx::query("UPDATE notifications SET read_at = NOW() WHERE user_id = $1::uuid AND read_at IS NULL")
-        .bind(&auth.user_id)
-        .execute(state.pg())
-        .await?;
-    Ok(Json(json!({ "ok": true })))
+    Ok(Json(
+        crate::notifications::mark_notifications_read(&state, &auth, body).await?,
+    ))
 }

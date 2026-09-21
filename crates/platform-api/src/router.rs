@@ -1,8 +1,9 @@
 use axum::extract::Extension;
+use axum::http::HeaderValue;
 use axum::middleware::from_fn;
 use axum::routing::{delete, get, post};
 use axum::Router;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::middleware::{
@@ -50,7 +51,11 @@ pub fn build_router(state: SharedApiState, metrics: SharedPlatformMetrics) -> Ro
         .route("/request-signature", post(routes::user::request_signature))
         .route_layer(from_fn(rate_limit_signature));
 
-    let user = public_user.merge(signature).merge(authed_platform);
+    let user = if config.wallet_auth_enabled {
+        public_user.merge(signature).merge(authed_platform)
+    } else {
+        authed_platform
+    };
 
     let recommendations = Router::new()
         .route("/feed", get(routes::recommendations::recommendation_feed))
@@ -156,12 +161,23 @@ pub fn build_router(state: SharedApiState, metrics: SharedPlatformMetrics) -> Ro
     router
         .route_layer(from_fn(http_metrics_middleware))
         .layer(TraceLayer::new_for_http())
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
+        .layer(cors_layer(config.cors_allowed_origins.as_deref()))
         .layer(Extension(metrics))
         .layer(Extension(state))
+}
+
+fn cors_layer(origins: Option<&str>) -> CorsLayer {
+    let layer = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+    let Some(origins) = origins.map(str::trim).filter(|value| !value.is_empty()) else {
+        return layer.allow_origin(Any);
+    };
+    let values: Vec<HeaderValue> = origins
+        .split(',')
+        .filter_map(|origin| origin.trim().parse().ok())
+        .collect();
+    if values.is_empty() {
+        layer.allow_origin(Any)
+    } else {
+        layer.allow_origin(AllowOrigin::list(values))
+    }
 }

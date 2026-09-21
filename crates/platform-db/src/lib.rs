@@ -11,6 +11,7 @@ pub mod referral;
 pub mod search_history;
 pub mod settings;
 pub mod user_references;
+pub mod users;
 pub mod waitlist;
 
 pub use delivery::{get_delivery_config, DeliveryConfigRow};
@@ -48,6 +49,7 @@ pub use settings::{
     blocked_count, delete_setting, get_bool_setting, get_setting, list_settings,
     notification_allowed, upsert_setting, NotificationChannel, UserSettingRow,
 };
+pub use users::{upsert_wallet_user, wallet_for_user};
 pub use user_references::{
     delete_reference, exists_reference, list_references, upsert_reference, ReferenceInput,
     UserReferenceRow,

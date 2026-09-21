@@ -219,11 +219,12 @@ impl NotificationService {
         object_type: &str,
         title: &str,
         message: &str,
+        metadata: Option<serde_json::Value>,
     ) -> AppResult<()> {
         let notification_id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO notifications (notification_id, user_id, sender_wallet_address, type, object_id, object_type, title, message, created_at)
-             SELECT $1, user_id, $3, $4, $5, $6, $7, $8, EXTRACT(EPOCH FROM NOW())::BIGINT
+            "INSERT INTO notifications (notification_id, user_id, sender_wallet_address, type, object_id, object_type, title, message, metadata_json, created_at)
+             SELECT $1, user_id, $3, $4, $5, $6, $7, $8, $9, EXTRACT(EPOCH FROM NOW())::BIGINT
              FROM users WHERE wallet_address = $2 OR user_id::text = $2",
         )
         .bind(notification_id)
@@ -234,6 +235,7 @@ impl NotificationService {
         .bind(object_type)
         .bind(title)
         .bind(message)
+        .bind(metadata)
         .execute(pool)
         .await?;
 
@@ -280,6 +282,7 @@ impl NotificationService {
                 "post",
                 "You were mentioned",
                 "Someone mentioned you in a post",
+                None,
             )
             .await?;
         }
@@ -308,6 +311,7 @@ impl NotificationService {
             "comment",
             "New comment",
             "Someone commented on your post",
+            None,
         )
         .await?;
         let _ = post_id;
@@ -335,19 +339,100 @@ impl NotificationService {
             "post",
             "New like",
             "Someone liked your post",
+            None,
+        )
+        .await
+    }
+
+    pub async fn notify_follow(
+        &self,
+        pool: &PgPool,
+        redis: &mut ConnectionManager,
+        recipient_wallet: &str,
+        follower_wallet: &str,
+    ) -> AppResult<()> {
+        if recipient_wallet.eq_ignore_ascii_case(follower_wallet) {
+            return Ok(());
+        }
+        self.insert_notification(
+            pool,
+            redis,
+            recipient_wallet,
+            Some(follower_wallet),
+            "follow",
+            follower_wallet,
+            "user",
+            "New follower",
+            "Someone started following you",
+            None,
+        )
+        .await
+    }
+
+    pub async fn notify_repost(
+        &self,
+        pool: &PgPool,
+        redis: &mut ConnectionManager,
+        author_wallet: &str,
+        reposter_wallet: &str,
+        post_id: &str,
+    ) -> AppResult<()> {
+        if author_wallet.eq_ignore_ascii_case(reposter_wallet) {
+            return Ok(());
+        }
+        self.insert_notification(
+            pool,
+            redis,
+            author_wallet,
+            Some(reposter_wallet),
+            "repost",
+            post_id,
+            "post",
+            "New repost",
+            "Someone reposted your post",
+            None,
+        )
+        .await
+    }
+
+    pub async fn notify_tip(
+        &self,
+        pool: &PgPool,
+        redis: &mut ConnectionManager,
+        recipient_wallet: &str,
+        sender_wallet: &str,
+        object_id: &str,
+        amount: &str,
+    ) -> AppResult<()> {
+        if recipient_wallet.eq_ignore_ascii_case(sender_wallet) {
+            return Ok(());
+        }
+        self.insert_notification(
+            pool,
+            redis,
+            recipient_wallet,
+            Some(sender_wallet),
+            "tip",
+            object_id,
+            "post",
+            "You received a tip",
+            &format!("Someone tipped you {amount}"),
+            Some(serde_json::json!({ "amount": amount })),
         )
         .await
     }
 
     pub async fn send_verification_email(&self, to: &str, verify_url: &str) -> AppResult<()> {
+        let html = crate::templates::render_email_verification(verify_url)?;
         self.resend
-            .send_email(
-                to,
-                "Verify your email",
-                &format!("<p>Verify your email: <a href=\"{verify_url}\">{verify_url}</a></p>"),
-                None,
-                None,
-            )
+            .send_email(to, "Verify your email", &html, None, None)
+            .await
+    }
+
+    pub async fn send_welcome_email(&self, to: &str, app_url: &str) -> AppResult<()> {
+        let html = crate::templates::render_welcome(app_url)?;
+        self.resend
+            .send_email(to, "Welcome to MySocial", &html, None, None)
             .await
     }
 
@@ -367,6 +452,7 @@ impl NotificationService {
             "referral",
             "Referral reward unlocked",
             "You reached the referral milestone — claim your reward in the app",
+            None,
         )
         .await
     }

@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 a2.workspace = true
 anyhow.workspace = true
+minijinja = "2"
 async-trait.workspace = true
 axum.workspace = true
 futures-util.workspace = true

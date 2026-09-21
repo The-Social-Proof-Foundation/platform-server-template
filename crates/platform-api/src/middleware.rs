@@ -8,13 +8,14 @@ use axum::Json;
 use platform_core::SharedPlatformMetrics;
 use serde_json::json;
 
-use crate::auth::jwt::verify_access_token;
+use crate::auth::authenticate_access_token;
 use crate::error::ApiError;
 use crate::state::SharedApiState;
 
 #[derive(Clone)]
 pub struct AuthUser {
     pub user_id: String,
+    pub wallet_address: String,
 }
 
 pub async fn require_auth(
@@ -22,13 +23,13 @@ pub async fn require_auth(
     mut req: Request,
     next: Next,
 ) -> Response {
-    match require_auth_inner(state, &mut req) {
+    match require_auth_inner(state, &mut req).await {
         Ok(()) => next.run(req).await,
         Err(err) => err.into_response(),
     }
 }
 
-fn require_auth_inner(state: SharedApiState, req: &mut Request) -> Result<(), ApiError> {
+async fn require_auth_inner(state: SharedApiState, req: &mut Request) -> Result<(), ApiError> {
     let auth_header = req
         .headers()
         .get(axum::http::header::AUTHORIZATION)
@@ -39,10 +40,8 @@ fn require_auth_inner(state: SharedApiState, req: &mut Request) -> Result<(), Ap
         .strip_prefix("Bearer ")
         .ok_or(platform_core::AppError::Unauthorized)?;
 
-    let claims = verify_access_token(token, &state.config().jwt_secret)?;
-    req.extensions_mut().insert(AuthUser {
-        user_id: claims.user_id,
-    });
+    let user = authenticate_access_token(&state, token).await?;
+    req.extensions_mut().insert(user);
     Ok(())
 }
 

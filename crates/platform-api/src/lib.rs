@@ -4,6 +4,7 @@ pub mod indexer;
 pub mod metrics_server;
 pub mod middleware;
 pub mod mysocial;
+pub mod notifications;
 pub mod recommend;
 pub mod router;
 pub mod routes;

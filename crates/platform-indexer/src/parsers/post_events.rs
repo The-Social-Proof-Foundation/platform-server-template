@@ -40,6 +40,8 @@ pub struct PostCreatedPayload {
     #[serde(default)]
     pub post_type: Option<String>,
     #[serde(default)]
+    pub parent_post_id: Option<String>,
+    #[serde(default)]
     pub mentions: Option<Vec<String>>,
     #[serde(default)]
     pub media_urls: Option<Vec<String>>,
@@ -170,6 +172,11 @@ pub fn parse_post_event(raw: &RawGrpcEvent) -> Option<ParsedChainEvent> {
             platform_id: as_string(data.get("platform_id").unwrap_or(&Value::Null)).to_lowercase(),
             content: as_string(data.get("content").unwrap_or(&Value::Null)),
             post_type: data.get("post_type").map(as_string).filter(|s| !s.is_empty()),
+            parent_post_id: data
+                .get("parent_post_id")
+                .map(as_string)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_lowercase()),
             mentions: data.get("mentions").and_then(as_string_array),
             media_urls: data
                 .get("media_urls")

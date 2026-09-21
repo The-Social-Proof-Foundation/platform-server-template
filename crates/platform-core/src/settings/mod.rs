@@ -34,6 +34,21 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         description: Some("Notify on likes"),
     },
     SettingDefinition {
+        key: "notify.follows",
+        default_value: Some("true"),
+        description: Some("Notify on new followers"),
+    },
+    SettingDefinition {
+        key: "notify.reposts",
+        default_value: Some("true"),
+        description: Some("Notify when someone reposts your post"),
+    },
+    SettingDefinition {
+        key: "notify.tips",
+        default_value: Some("true"),
+        description: Some("Notify on tips"),
+    },
+    SettingDefinition {
         key: "notify.referrals",
         default_value: Some("true"),
         description: Some("Notify on referral rewards and claims"),

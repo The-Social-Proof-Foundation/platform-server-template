@@ -80,6 +80,9 @@ fn type_pref_key(notification_type: &str) -> Option<&'static str> {
         "mention" => Some("notify.mentions"),
         "comment" => Some("notify.comments"),
         "like" => Some("notify.likes"),
+        "follow" => Some("notify.follows"),
+        "repost" => Some("notify.reposts"),
+        "tip" => Some("notify.tips"),
         t if t.starts_with("referral") => Some("notify.referrals"),
         _ => None,
     }
